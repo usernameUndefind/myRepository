@@ -1,0 +1,180 @@
+package web;
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.Month;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IntSummaryStatistics;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+
+import javax.websocket.OnClose;
+import javax.websocket.OnError;
+import javax.websocket.OnMessage;
+import javax.websocket.OnOpen;
+import javax.websocket.Session;
+import javax.websocket.server.ServerEndpoint;
+
+import org.apache.commons.configuration.beanutils.BeanFactory;
+import org.apache.http.HttpEntity;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.nodes.Node;
+import org.jsoup.select.Elements;
+import org.springframework.beans.factory.xml.XmlBeanFactory;import com.alibaba.druid.pool.vendor.SybaseExceptionSorter;
+import com.google.common.reflect.TypeToken;
+import com.google.gson.Gson;
+
+import domain.StationExpressRecord;
+import domain.Test;
+import util.Util;
+
+public class WebSocketTest {
+	
+	
+	
+//	@SuppressWarnings("all")
+//	public static void main(String[] args) {
+//		Gson gson = new Gson();
+//		Map<String, String> param = new HashMap<>();
+//		param.put("code", "100000");
+//		param.put("type", "1");
+//		String get = httpGet("http://xzqh.mca.gov.cn/getInfo", param);
+//		Map<String, List<String>> map = gson.fromJson(get, new TypeToken<Map<String, List<String>>>() {
+//		}.getType());
+//		
+//		for (String key : map.keySet()) {
+////			System.out.print(key + "   ");
+//			List<String> list = map.get(key);
+////			for (int i = 0; i < list.size(); i++) {
+////				System.out.print(list.get() + " " + i);
+////			}
+//			String province = list.get(7);
+//			String city = "".equals(list.get(8)) ? province : list.get(8);
+//			String district = list.get(0);
+//			String postCode = list.get(5);
+//			String code = key;
+//			System.out.println(code + "  " + province + " " + city + " " + district + " " + postCode);
+//		}
+//		
+//	}
+	
+	private static String url = "http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/2018/";
+	
+	public static void main(String[] args) {
+		String url = "http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/2018/index.html";
+		String relationUrl = "http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/2018/";
+		try {
+			Document doc = Jsoup.connect(url).timeout(10000).get();
+			Elements element = doc.getElementsByClass("provincetr");
+			for (int i = 0; i < element.size(); i++) {
+				Element ele = element.get(i);
+//				System.out.println(ele.html());
+				Elements children = ele.children();
+				for (Element e : children) {
+					String text = e.html();
+					String attr = text.substring(text.indexOf("=\"")+2, text.lastIndexOf("\""));
+					String u = relationUrl + attr;
+					String html = e.text();
+					getCity(u,html);
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	
+	public static void getCity(String u,String province) throws Exception {
+		try {
+			Document doc = Jsoup.connect(u).timeout(10000).get();
+			Elements elements = doc.getElementsByClass("citytr");
+			for (Element element : elements) {
+				Elements children = element.children();
+//			children.stream().filter()
+				for (int i = 1; i < children.size();i++) {
+					Element element2 = children.get(i);
+					String text = element2.html();
+					String attr = text.substring(text.indexOf("=\"")+2, text.lastIndexOf("\""));
+					String html = element2.text();
+					getDistrict(url + attr,province,html);
+				}
+			}
+		} catch (Exception e) {
+			System.out.println("出错");
+			getCity(u,province);
+			// TODO: handle exception
+		}
+	}
+	
+	public static void getDistrict(String url,String province,String city)  {
+		try {
+			
+			Document doc = Jsoup.connect(url).timeout(5000).get();
+			Elements elements = doc.getElementsByClass("countytr");
+			int j = 0;
+			for (Element element : elements) {
+				if(j++ == 0) {
+					continue;
+				}
+				Elements children = element.children();
+				String code = "";
+				String district = "";
+				for (int i = 0; i < children.size();i++) {
+					Element element2 = children.get(i);
+					String html = element2.text();
+					if(i == 0) {
+						code = html.substring(0,6);
+					} else {
+						district = html;
+					}
+//				System.out.println(html + " " + i);
+				}
+				System.out.println("insert into location(code,province,city,district) values("+code+",'"+province+"','"+city+"','"+district+"');");
+			}
+		} catch (Exception e) {
+			System.out.println("出错");
+			getDistrict(url,province,city);
+		}
+	}
+	
+	public static String httpGet(String url,Map<String,String> param) {
+		try {
+			CloseableHttpClient client = HttpClients.createDefault();
+			URIBuilder builder = new URIBuilder(url);
+			
+			Set<String> paramKeySet = param.keySet();
+			for (String key : paramKeySet) {
+				builder.addParameter(key, param.get(key));
+			}
+			
+			HttpGet get = new HttpGet(builder.build());
+			
+			CloseableHttpResponse resp = client.execute(get);
+			HttpEntity entity = resp.getEntity();
+			return EntityUtils.toString(entity,"UTF-8");
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+}
