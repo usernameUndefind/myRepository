@@ -2,6 +2,9 @@ package web;
 
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Month;
@@ -43,7 +46,9 @@ import org.jsoup.select.Elements;
 import org.springframework.beans.factory.xml.XmlBeanFactory;import com.alibaba.druid.pool.vendor.SybaseExceptionSorter;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
+import com.mysql.jdbc.Connection;
 
+import domain.Location;
 import domain.StationExpressRecord;
 import domain.Test;
 import util.Util;
@@ -51,7 +56,14 @@ import util.Util;
 public class WebSocketTest {
 	
 	
-	
+	/**
+	 * 从中国人民共和国民政部获取省市区代码
+	 * @Title WebSocketTest.java
+	 * @Package web
+	 * @author liusiyuan
+	 * @date 2019年6月28日
+	 * @Description TODO
+	 */
 //	@SuppressWarnings("all")
 //	public static void main(String[] args) {
 //		Gson gson = new Gson();
@@ -79,31 +91,47 @@ public class WebSocketTest {
 //	}
 	
 	private static String url = "http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/2018/";
+//	
+//	/**
+//	 * 国家统计局中获取省市区
+//	 * @Title WebSocketTest.java
+//	 * @Package web
+//	 * @author liusiyuan
+//	 * @date 2019年6月28日
+//	 * @Description TODO
+//	 */
+//	public static void main(String[] args) {
+//		String url = "http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/2018/index.html";
+//		String relationUrl = "http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/2018/";
+//		try {
+//			Document doc = Jsoup.connect(url).timeout(10000).get();
+//			Elements element = doc.getElementsByClass("provincetr");
+//			for (int i = 0; i < element.size(); i++) {
+//				Element ele = element.get(i);
+////				System.out.println(ele.html());
+//				Elements children = ele.children();
+//				for (Element e : children) {
+//					String text = e.html();
+//					String attr = text.substring(text.indexOf("=\"")+2, text.lastIndexOf("\""));
+//					String u = relationUrl + attr;
+//					String html = e.text();
+//					getCity(u,html);
+//				}
+//			}
+//		} catch (Exception e) {
+//			e.printStackTrace();
+//		}
+//	}
 	
-	public static void main(String[] args) {
-		String url = "http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/2018/index.html";
-		String relationUrl = "http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/2018/";
-		try {
-			Document doc = Jsoup.connect(url).timeout(10000).get();
-			Elements element = doc.getElementsByClass("provincetr");
-			for (int i = 0; i < element.size(); i++) {
-				Element ele = element.get(i);
-//				System.out.println(ele.html());
-				Elements children = ele.children();
-				for (Element e : children) {
-					String text = e.html();
-					String attr = text.substring(text.indexOf("=\"")+2, text.lastIndexOf("\""));
-					String u = relationUrl + attr;
-					String html = e.text();
-					getCity(u,html);
-				}
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-	}
 	
-	
+	/**
+	 * 获取国家统计局市
+	 * @Title WebSocketTest.java
+	 * @Package web
+	 * @author liusiyuan
+	 * @date 2019年6月28日
+	 * @Description TODO
+	 */
 	public static void getCity(String u,String province) throws Exception {
 		try {
 			Document doc = Jsoup.connect(u).timeout(10000).get();
@@ -126,19 +154,27 @@ public class WebSocketTest {
 		}
 	}
 	
+	/**
+	 * 获取国家统计局区
+	 * @Title WebSocketTest.java
+	 * @Package web
+	 * @author liusiyuan
+	 * @date 2019年6月28日
+	 * @Description TODO
+	 */
 	public static void getDistrict(String url,String province,String city)  {
 		try {
-			
 			Document doc = Jsoup.connect(url).timeout(5000).get();
 			Elements elements = doc.getElementsByClass("countytr");
 			int j = 0;
 			for (Element element : elements) {
-				if(j++ == 0) {
-					continue;
-				}
+//				if(j++ == 0) {
+//					continue;
+//				}
 				Elements children = element.children();
 				String code = "";
 				String district = "";
+				if(children.text().contains("市辖区")) continue;
 				for (int i = 0; i < children.size();i++) {
 					Element element2 = children.get(i);
 					String html = element2.text();
@@ -157,6 +193,14 @@ public class WebSocketTest {
 		}
 	}
 	
+	/**
+	 * 使用httpget请求
+	 * @Title WebSocketTest.java
+	 * @Package web
+	 * @author liusiyuan
+	 * @date 2019年6月28日
+	 * @Description TODO
+	 */
 	public static String httpGet(String url,Map<String,String> param) {
 		try {
 			CloseableHttpClient client = HttpClients.createDefault();
@@ -176,5 +220,80 @@ public class WebSocketTest {
 			e.printStackTrace();
 		}
 		return null;
+	}
+	
+	/**
+	 * 将生成到的数据生成联动数据库
+	 * @Title WebSocketTest.java
+	 * @Package web
+	 * @author liusiyuan
+	 * @date 2019年6月28日
+	 * @Description TODO
+	 */
+	@SuppressWarnings("all")
+	public static void main(String[] args) {
+		
+		
+		List<Location> lists = (List<Location>) doSomethingInDataBase();
+		String code1 = "";
+		String sql1 = "";
+		String code2 = "";
+		String sql2 = "";
+		String flag = "";
+		for (Location location : lists) {
+			
+			code1 = location.getCode().substring(0, 2) + "0000";
+			if(!code1.equals(flag)) {
+				flag = code1;
+//				sql1 = code1 + "  1  " + location.getProvince();
+				sql1 = "insert into dynamic_location(code,level,name) values('"+code1+"','1','"+location.getProvince()+"')";
+				System.out.println(sql1);
+			
+				code2 = !"市辖区".equals(location.getCity())? location.getCode().substring(0, 4) + "00" : code1;
+//				sql2 = code2 + "  2  " + location.getCity() + "  " + code1 + "  1";
+				sql2 = "insert into dynamic_location(code,level,name,parent_code,parent_level) values('"+code2+"','2','"+location.getCity()+"','"+code1+"','1')";
+				System.out.println(sql2);
+			}
+			
+			String code3 = location.getCode();
+//			String sql3 = code3 + "  3  " + location.getDistrict() + "  " + code2 + "  2";
+			String sql3 = "insert into dynamic_location(code,level,name,parent_code,parent_level) values('"+code3+"','3','"+location.getDistrict()+"','"+code2+"','2')";
+			System.out.println(sql3);
+ 		}
+	}
+	
+//	public static void main(String[] args) {
+//		doSomethingInDataBase();
+//	}
+	
+	/**
+	 * 数据库交互
+	 * @Title WebSocketTest.java
+	 * @Package web
+	 * @author liusiyuan
+	 * @date 2019年6月28日
+	 * @Description TODO
+	 */
+	public static Object doSomethingInDataBase() {
+		List<Location> lists = new ArrayList<>();
+		try {
+			Class.forName("com.mysql.jdbc.Driver");
+			
+			Connection conn = (Connection) DriverManager.getConnection("jdbc:mysql://localhost:3306/test", "root", "root");
+			Statement stat = conn.createStatement();
+			String sql = "select * from location";
+			ResultSet resultSet = stat.executeQuery(sql);
+			while(resultSet.next()) {
+				Location location = new Location();
+				location.setCode(resultSet.getString("code"));
+				location.setProvince(resultSet.getString("province"));
+				location.setCity(resultSet.getString("city"));
+				location.setDistrict(resultSet.getString("district"));
+				lists.add(location);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return lists;
 	}
 }
